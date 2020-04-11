@@ -41,15 +41,17 @@ training_data = [
 ]
 '''
 
-def loadData(dictionary, lines, skiplines):
+def loadData(dictionary, lines, uselines):
     new_data = []
-    skips = []
+    use = []
 
-    filteredLines = [i for j, i in enumerate(lines) if j not in skiplines]
-    length = len(filteredLines)
+    # filteredLines = [i for j, i in enumerate(lines) if j not in skiplines]
+    length = len(lines)
     
-    index = 0
-    for line in filteredLines:
+    # index = 0
+    # for line in filteredLines:
+    for count in uselines:
+        line = lines[count]
         '''
         if index in skiplines:
             print("skipping...")
@@ -63,55 +65,65 @@ def loadData(dictionary, lines, skiplines):
         try:
             for word in sentence:
                 converted_line.append(dictionary.index(word))
-
+            use.append(count)
         except ValueError:
             # dictionary.append(word)
             # converted_line.append(dictionary.index(word))
 
-            skips.append(index)
-            index += 1
+            # skips.append(index)
+            # index += 1
             continue
 
-        print((index / float(length)) * 100.00)
+        print((count / float(length)) * 100.00)
         new_data.append((sentence, converted_line))
         print(new_data[-1])
-        index += 1
-    return new_data, dictionary, skips
+        # index += 1
+    return new_data, dictionary, use
     # print(new_data[-1])
 
  ### Prepare data
 print("preparing data...")
 validationSet = ["newstest2012","newstest2013","newstest2014","newstest2015"]
 
+sampleSize = 1
 rootDir = "./datasets/"
 englishDictionary = open(rootDir + "./vocab.50K.en.txt", 'r').read().lower().split("\n")
 germanDictionary = open(rootDir + "./vocab.50K.de.txt", 'r').read().lower().split("\n")
-englishTraining = open(rootDir + "./train.en", 'r').read().lower().split("\n")
-germanEmbedding = open(rootDir + "./train.de", 'r').read().lower().split("\n")
+englishTraining = open(rootDir + "./train.en", 'r').read().lower().split("\n")[::sampleSize]
+germanEmbedding = open(rootDir + "./train.de", 'r').read().lower().split("\n")[::sampleSize]
 
 savedEngData = []
 savedGerData = []
 
-if not os.path.exists(rootDir + "data-en.json"):
-    skiplines = []
-    trainingData, englishDictionaryNew, skiplines = loadData(englishDictionary, englishTraining, skiplines)
-    with open(rootDir + "data-en.json", "w") as file:
-        json.dump([trainingData, englishDictionaryNew, skiplines], file)
+if not os.path.exists(rootDir + "data-en-" + str(sampleSize) + ".json"):
+    uselines = range(0, len(englishTraining))
+    trainingData, englishDictionaryNew, uselines = loadData(englishDictionary, englishTraining, uselines)
+    with open(rootDir + "data-en-" + str(sampleSize) + ".json", "w") as file:
+        json.dump([trainingData, englishDictionaryNew, uselines], file)
     print("english data prepared...")
 
 else:
-    with open(rootDir + "data-en.json", "r") as file:
+    with open(rootDir + "data-en-" + str(sampleSize) + ".json", "r") as file:
         savedEngData = json.load(file)
 
-if not os.path.exists(rootDir + "data-de.json"):
-    trainnigLabels, germanDictionaryNew, skiplines = loadData(germanDictionary, germanEmbedding, skiplines)
-    with open(rootDir + "data-de.json", "w") as file:
-        json.dump([trainingLabels, germanDictionaryNew, skiplines], file)
+if not os.path.exists(rootDir + "data-de-" + str(sampleSize) + ".json"):
+    trainingLabels, germanDictionaryNew, uselines = loadData(germanDictionary, germanEmbedding, uselines)
+    with open(rootDir + "data-de-" + str(sampleSize) + ".json", "w") as file:
+        json.dump([trainingLabels, germanDictionaryNew, uselines], file)
     print("german data prepared...")
 
 else:
-    with open(rootDir + "data-de.json", "r") as file:
+    with open(rootDir + "data-de-" + str(sampleSize) + ".json", "r") as file:
         savedGerData = json.load(file)
+
+print("consolidating lists...")
+
+# perhaps could be more efficient with iteration over Ger saved dsta and using englishTrining in place pf savedEngData[0][j]
+newEngLines = [savedEngData[0][j] for j, i in enumerate(savedEngData[2]) if i not in savedGerData[2]]
+
+print("saving entire dataset...")
+with open(rootDir + "data-together-" + str(sampleSize) + ".json", "w") as file:
+    json.dump([[newEngLines, savedEngData[1], savedGerData[2]], savedGerData], file)
 
 print("loaded data...")
 exit()
