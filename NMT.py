@@ -85,7 +85,7 @@ def loadData(dictionary, lines, uselines):
 print("preparing data...")
 validationSet = ["newstest2012","newstest2013","newstest2014","newstest2015"]
 
-sampleSize = 1
+sampleSize = 2
 rootDir = "./datasets/"
 englishDictionary = open(rootDir + "./vocab.50K.en.txt", 'r').read().lower().split("\n")
 germanDictionary = open(rootDir + "./vocab.50K.de.txt", 'r').read().lower().split("\n")
@@ -105,6 +105,7 @@ if not os.path.exists(rootDir + "data-en-" + str(sampleSize) + ".json"):
 else:
     with open(rootDir + "data-en-" + str(sampleSize) + ".json", "r") as file:
         savedEngData = json.load(file)
+    trainingData, englishDictionaryNew, uselines = savedEngData[0], savedEngData[1], savedEngData[2]
 
 if not os.path.exists(rootDir + "data-de-" + str(sampleSize) + ".json"):
     trainingLabels, germanDictionaryNew, uselines = loadData(germanDictionary, germanEmbedding, uselines)
@@ -115,11 +116,20 @@ if not os.path.exists(rootDir + "data-de-" + str(sampleSize) + ".json"):
 else:
     with open(rootDir + "data-de-" + str(sampleSize) + ".json", "r") as file:
         savedGerData = json.load(file)
+    trainingLabels, germanDictionaryNew, uselines = savedGerData[0], savedGerData[1], savedGerData[2]
 
 print("consolidating lists...")
 
 # perhaps could be more efficient with iteration over Ger saved dsta and using englishTrining in place pf savedEngData[0][j]
-newEngLines = [savedEngData[0][j] for j, i in enumerate(savedEngData[2]) if i not in savedGerData[2]]
+newEngLines = [savedEngData[0][savedEngData[2].index(i)] for j, i in enumerate(savedGerData[2]) if i in savedEngData[2]]
+
+'''
+newEngLines = []
+for j, i in enumerate(savedGerData[2]):
+    print(j,i)
+    if i in savedEngData[2]:
+        newEngLines.append(englishTraining[j])
+'''
 
 print("saving entire dataset...")
 with open(rootDir + "data-together-" + str(sampleSize) + ".json", "w") as file:
