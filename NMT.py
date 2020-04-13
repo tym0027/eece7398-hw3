@@ -10,7 +10,7 @@ torch.manual_seed(1)
 
 class NMT(nn.Module):
     def __init__(self, embedding_dim, hidden_dim, vocab_size, tagset_size):
-        super(LSTMTagger, self).__init__()
+        super(NMT, self).__init__()
         self.hidden_dim = hidden_dim
 
         self.word_embeddings = nn.Embedding(vocab_size, embedding_dim)
@@ -63,10 +63,16 @@ def loadData(dictionary, lines, uselines):
         converted_line = []
         
         try:
+            converted_line.append(1)
             for word in sentence:
-                converted_line.append(dictionary.index(word))
+                try:
+                    converted_line.append(dictionary.index(word))
+                except ValueError:
+                    converted_line.append(0)
+            converted_line.append(2)
             use.append(count)
-        except ValueError:
+        
+        except:
             # dictionary.append(word)
             # converted_line.append(dictionary.index(word))
 
@@ -85,7 +91,7 @@ def loadData(dictionary, lines, uselines):
 print("preparing data...")
 validationSet = ["newstest2012","newstest2013","newstest2014","newstest2015"]
 
-sampleSize = 2
+sampleSize = 1
 rootDir = "./datasets/"
 englishDictionary = open(rootDir + "./vocab.50K.en.txt", 'r').read().lower().split("\n")
 germanDictionary = open(rootDir + "./vocab.50K.de.txt", 'r').read().lower().split("\n")
@@ -121,9 +127,9 @@ else:
 print("consolidating lists...")
 
 # perhaps could be more efficient with iteration over Ger saved dsta and using englishTrining in place pf savedEngData[0][j]
-newEngLines = [savedEngData[0][savedEngData[2].index(i)] for j, i in enumerate(savedGerData[2]) if i in savedEngData[2]]
+# newEngLines = [savedEngData[0][savedEngData[2].index(i)] for j, i in enumerate(savedGerData[2]) if i in savedEngData[2]]
 
-'''
+''' not need anymore???
 newEngLines = []
 for j, i in enumerate(savedGerData[2]):
     print(j,i)
@@ -131,13 +137,26 @@ for j, i in enumerate(savedGerData[2]):
         newEngLines.append(englishTraining[j])
 '''
 
-print("saving entire dataset...")
-with open(rootDir + "data-together-" + str(sampleSize) + ".json", "w") as file:
-    json.dump([[newEngLines, savedEngData[1], savedGerData[2]], savedGerData], file)
+if not os.path.exists(rootDir + "data-together-" + str(sampleSize) + ".json"):
+    print("saving entire dataset...")
+    with open(rootDir + "data-together-" + str(sampleSize) + ".json", "w") as file:
+        json.dump([savedEngData, savedGerData], file)
 
 print("loaded data...")
-exit()
 
+'''
+training_data = {}
+for key, i in savedEngData[0]:
+    training_data[key] = i
+
+print(training_data)
+# training_data = {key : i for i, key in savedEngData[0]}
+# training_labels = {key : i for i, key in savedGerData[0]}
+'''
+
+# exit()
+
+''' may not be needed???
 word_to_it = {}
 for sent, tags in training_data:
     for word in sent:
@@ -145,15 +164,21 @@ for sent, tags in training_data:
             word_to_ix[word] = len(word_to_ix)
 print(word_to_ix)
 tag_to_ix = {"DET": 0, "NN": 1, "V": 2}
+'''
 
 # These will usually be more like 32 or 64 dimensional.
 # We will keep them small, so we can see how the weights change as we train.
 EMBEDDING_DIM = 6
 HIDDEN_DIM = 6
 
-model = NMT(EMBEDDING_DIM, HIDDEN_DIM, len(word_to_ix), len(tag_to_ix))
+print("preparing model...")
+
+# model = NMT(EMBEDDING_DIM, HIDDEN_DIM, len(word_to_ix), len(tag_to_ix))
+model = NMT(EMBEDDING_DIM, HIDDEN_DIM, len(savedEngData[0]), len(savedEngData[1]))
 loss_function = nn.NLLLoss()
 optimizer = optim.SGD(model.parameters(), lr=0.1)
+
+exit()
 
 # See what the scores are before training
 # Note that element i,j of the output is the score for tag j for word i.
