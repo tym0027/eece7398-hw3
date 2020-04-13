@@ -30,9 +30,10 @@ class NMT(nn.Module):
         return tag_scores
 
 
-def prepare_sequence(seq, to_ix):
-    idxs = [to_ix[w] for w in seq]
-    return torch.tensor(idxs, dtype=torch.long)
+def prepare_sequence(seq):
+    # idxs = [to_ix[w] for w in seq]
+    idxs = [w for w in seq]
+    return torch.tensor(idxs, dtype=torch.long).cuda()
 
 ''' data example...
 training_data = [
@@ -126,16 +127,6 @@ else:
 
 print("consolidating lists...")
 
-# perhaps could be more efficient with iteration over Ger saved dsta and using englishTrining in place pf savedEngData[0][j]
-# newEngLines = [savedEngData[0][savedEngData[2].index(i)] for j, i in enumerate(savedGerData[2]) if i in savedEngData[2]]
-
-''' not need anymore???
-newEngLines = []
-for j, i in enumerate(savedGerData[2]):
-    print(j,i)
-    if i in savedEngData[2]:
-        newEngLines.append(englishTraining[j])
-'''
 
 if not os.path.exists(rootDir + "data-together-" + str(sampleSize) + ".json"):
     print("saving entire dataset...")
@@ -144,41 +135,18 @@ if not os.path.exists(rootDir + "data-together-" + str(sampleSize) + ".json"):
 
 print("loaded data...")
 
-'''
-training_data = {}
-for key, i in savedEngData[0]:
-    training_data[key] = i
-
-print(training_data)
-# training_data = {key : i for i, key in savedEngData[0]}
-# training_labels = {key : i for i, key in savedGerData[0]}
-'''
-
-# exit()
-
-''' may not be needed???
-word_to_it = {}
-for sent, tags in training_data:
-    for word in sent:
-        if word not in word_to_ix:
-            word_to_ix[word] = len(word_to_ix)
-print(word_to_ix)
-tag_to_ix = {"DET": 0, "NN": 1, "V": 2}
-'''
-
 # These will usually be more like 32 or 64 dimensional.
 # We will keep them small, so we can see how the weights change as we train.
-EMBEDDING_DIM = 6
-HIDDEN_DIM = 6
+EMBEDDING_DIM = 64 # 6
+HIDDEN_DIM = 64 # 6
 
 print("preparing model...")
 
 # model = NMT(EMBEDDING_DIM, HIDDEN_DIM, len(word_to_ix), len(tag_to_ix))
-model = NMT(EMBEDDING_DIM, HIDDEN_DIM, len(savedEngData[0]), len(savedEngData[1]))
+model = NMT(EMBEDDING_DIM, HIDDEN_DIM, len(savedEngData[0]), len(savedEngData[1])).cuda()
 loss_function = nn.NLLLoss()
 optimizer = optim.SGD(model.parameters(), lr=0.1)
 
-exit()
 
 # See what the scores are before training
 # Note that element i,j of the output is the score for tag j for word i.
@@ -190,25 +158,67 @@ with torch.no_grad():
     print(tag_scores)
 '''
 
+print("starting...")
 for epoch in range(300):  # again, normally you would NOT do 300 epochs, it is toy data
-    for sentence, tags in training_data:
+    
+    index = 0
+    _loss = 0
+
+    # Training
+    for sentence in savedEngData[0]:
         # Step 1. Remember that Pytorch accumulates gradients.
         # We need to clear them out before each instance
         model.zero_grad()
 
         # Step 2. Get our inputs ready for the network, that is, turn them into
         # Tensors of word indices.
-        sentence_in = prepare_sequence(sentence, word_to_ix)
-        targets = prepare_sequence(tags, tag_to_ix)
+        # print("inputs: ", sentence[1])
+        # print("tags: ", savedGerData[0][index][1])
+
+        sentence_in = prepare_sequence(sentence[1])
+        targets = prepare_sequence(savedEngData[0][index][1])
 
         # Step 3. Run our forward pass.
         tag_scores = model(sentence_in)
-
+        # print("\n\ntagscore:",tag_scores)
         # Step 4. Compute the loss, gradients, and update the parameters by
         #  calling optimizer.step()
         loss = loss_function(tag_scores, targets)
+        
+
+        _loss += loss.item()
+        if index % 100 == 0:
+            print("\t",index,")", str(loss.item()))
+
         loss.backward()
+
         optimizer.step()
+
+        index += 1
+    
+    print("Train ", epoch, " ) loss: ", str(_loss/len(savedEngData[0])))
+
+    # Validation
+    '''
+    _loss = 0
+    for sentence in savedEngDataVal[0]:
+        model.train(False)
+        model.eval()
+
+        sentence_in = prepare_sequence(sentence[1])
+        targets = prepare_sequence(savedEngData[0][index][1])
+
+        with torch.no_grad():
+            tag_scores = model(sentence_in)
+
+        loss = loss_function(tag_scores, targets)
+        _loss += loss.item()
+
+        # b = blue
+
+    print("Validation ", epoch, ") loss: ", _loss/len(savedEngDataVal[0]), " BLEU: ", b)
+    model.train(True)
+    '''
 
 # See what the scores are after training
 '''
