@@ -30,8 +30,51 @@ class NMT(nn.Module):
         return tag_scores
 
 
+def preprocess(rootDir, sampleSize, englishDictionary, englishTraining, germanDictionary, germanEmbedding):
+    if not os.path.exists(rootDir + "data-en-" + str(sampleSize) + ".json"):
+        uselines = range(0, len(englishTraining))
+        trainingData, englishDictionaryNew, uselines = loadData(englishDictionary, englishTraining, uselines)
+        with open(rootDir + "data-en-" + str(sampleSize) + ".json", "w") as file:
+            json.dump([trainingData, englishDictionaryNew, uselines], file)
+    else:
+        with open(rootDir + "data-en-" + str(sampleSize) + ".json", "r") as file:
+            savedEngData = json.load(file)
+        trainingData, englishDictionaryNew, uselines = savedEngData[0], savedEngData[1], savedEngData[2]
+    
+    print("english data prepared...")
+
+    if not os.path.exists(rootDir + "data-de-" + str(sampleSize) + ".json"):
+        trainingLabels, germanDictionaryNew, uselines = loadData(germanDictionary, germanEmbedding, uselines)
+        with open(rootDir + "data-de-" + str(sampleSize) + ".json", "w") as file:
+            json.dump([trainingLabels, germanDictionaryNew, uselines], file)
+
+    else:
+        with open(rootDir + "data-de-" + str(sampleSize) + ".json", "r") as file:
+            savedGerData = json.load(file)
+        trainingLabels, germanDictionaryNew, uselines = savedGerData[0], savedGerData[1], savedGerData[2]
+    print("german data prepared...")
+
+    '''
+    print("consolidating lists...")
+    if not os.path.exists(rootDir + "data-together-" + str(sampleSize) + ".json"):
+        print("saving entire dataset...")
+        with open(rootDir + "data-together-" + str(sampleSize) + ".json", "w") as file:
+            json.dump([savedEngData, savedGerData], file)
+    '''
+
+    print("loaded data...")
+
+    print()
+
+    return savedEngData, savedGerData 
+
+# https://stackoverflow.com/questions/2130016/splitting-a-list-into-n-parts-of-approximately-equal-length
+def split(a, n):
+    k, m = divmod(len(a), n)
+    return (a[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(n))
+
 def prepare_sequence(seq):
-    # idxs = [to_ix[w] for w in seq]
+    # print("sequence: ", seq)
     idxs = [w for w in seq]
     return torch.tensor(idxs, dtype=torch.long).cuda()
 
@@ -45,20 +88,10 @@ training_data = [
 def loadData(dictionary, lines, uselines):
     new_data = []
     use = []
-
-    # filteredLines = [i for j, i in enumerate(lines) if j not in skiplines]
     length = len(lines)
     
-    # index = 0
-    # for line in filteredLines:
     for count in uselines:
         line = lines[count]
-        '''
-        if index in skiplines:
-            print("skipping...")
-            index += 1
-            continue
-        '''
 
         sentence = line.replace("\n",'').split(" ")
         converted_line = []
@@ -74,25 +107,18 @@ def loadData(dictionary, lines, uselines):
             use.append(count)
         
         except:
-            # dictionary.append(word)
-            # converted_line.append(dictionary.index(word))
-
-            # skips.append(index)
-            # index += 1
             continue
 
         print((count / float(length)) * 100.00)
         new_data.append((sentence, converted_line))
         print(new_data[-1])
-        # index += 1
     return new_data, dictionary, use
     # print(new_data[-1])
 
- ### Prepare data
+### Prepare data
 print("preparing data...")
-validationSet = ["newstest2012","newstest2013","newstest2014","newstest2015"]
 
-sampleSize = 1
+sampleSize = 10
 rootDir = "./datasets/"
 englishDictionary = open(rootDir + "./vocab.50K.en.txt", 'r').read().lower().split("\n")
 germanDictionary = open(rootDir + "./vocab.50K.de.txt", 'r').read().lower().split("\n")
@@ -102,6 +128,18 @@ germanEmbedding = open(rootDir + "./train.de", 'r').read().lower().split("\n")[:
 savedEngData = []
 savedGerData = []
 
+savedEngData, savedGerData = preprocess(rootDir, sampleSize, englishDictionary, englishTraining, germanDictionary, germanEmbedding)
+
+# validation data
+validationSet = ["newstest2012","newstest2013","newstest2014","newstest2015"]
+englishValidation = []
+germanValidation = []
+
+for obj in validationSet:
+    englishValidation = englishValidation + open(rootDir + "./" + obj + ".en.txt", 'r').read().lower().split("\n")
+    germanValidation = germanValidation + open(rootDir + "./" + obj + ".de.txt", 'r').read().lower().split("\n")
+
+'''
 if not os.path.exists(rootDir + "data-en-" + str(sampleSize) + ".json"):
     uselines = range(0, len(englishTraining))
     trainingData, englishDictionaryNew, uselines = loadData(englishDictionary, englishTraining, uselines)
@@ -134,6 +172,7 @@ if not os.path.exists(rootDir + "data-together-" + str(sampleSize) + ".json"):
         json.dump([savedEngData, savedGerData], file)
 
 print("loaded data...")
+'''
 
 # These will usually be more like 32 or 64 dimensional.
 # We will keep them small, so we can see how the weights change as we train.
@@ -142,11 +181,14 @@ HIDDEN_DIM = 64 # 6
 
 print("preparing model...")
 
-# model = NMT(EMBEDDING_DIM, HIDDEN_DIM, len(word_to_ix), len(tag_to_ix))
 model = NMT(EMBEDDING_DIM, HIDDEN_DIM, len(savedEngData[0]), len(savedEngData[1])).cuda()
 loss_function = nn.NLLLoss()
 optimizer = optim.SGD(model.parameters(), lr=0.1)
 
+
+#### Divide data for epochs
+num_epochs = 30
+epoch_data = list(split(savedEngData, num_epochs))
 
 # See what the scores are before training
 # Note that element i,j of the output is the score for tag j for word i.
@@ -158,18 +200,20 @@ with torch.no_grad():
     print(tag_scores)
 '''
 
+index = 0
 print("starting...")
-for epoch in range(300):  # again, normally you would NOT do 300 epochs, it is toy data
+for epoch in range(num_epochs):  # again, normally you would NOT do 300 epochs, it is toy data
     
-    index = 0
     _loss = 0
 
     # Training
-    for sentence in savedEngData[0]:
+    # for sentence in savedEngData[0]:
+    print("samples: ", len(epoch_data[epoch][0]))
+    for sentence in epoch_data[epoch][0]:
         # Step 1. Remember that Pytorch accumulates gradients.
         # We need to clear them out before each instance
         model.zero_grad()
-
+        # print("sen: ", len(sentence))
         # Step 2. Get our inputs ready for the network, that is, turn them into
         # Tensors of word indices.
         # print("inputs: ", sentence[1])
@@ -196,7 +240,7 @@ for epoch in range(300):  # again, normally you would NOT do 300 epochs, it is t
 
         index += 1
     
-    print("Train ", epoch, " ) loss: ", str(_loss/len(savedEngData[0])))
+    print("Train ", epoch, " ) loss: ", str(_loss/len(epoch_data[epoch])))
 
     # Validation
     '''
