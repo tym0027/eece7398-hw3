@@ -6,6 +6,9 @@ import torch.optim as optim
 import json
 import os
 
+from bleu import *
+chencherry = SmoothingFunction()
+
 torch.manual_seed(1)
 
 class NMT(nn.Module):
@@ -41,7 +44,7 @@ def preprocess(rootDir, sampleSize, englishDictionary, englishTraining, germanDi
             savedEngData = json.load(file)
         trainingData, englishDictionaryNew, uselines = savedEngData[0], savedEngData[1], savedEngData[2]
     
-    print("english data prepared...")
+    print("\t[ OK ] english data prepared...")
 
     if not os.path.exists(rootDir + "data-de-" + str(sampleSize) + ".json"):
         trainingLabels, germanDictionaryNew, uselines = loadData(germanDictionary, germanEmbedding, uselines)
@@ -52,7 +55,7 @@ def preprocess(rootDir, sampleSize, englishDictionary, englishTraining, germanDi
         with open(rootDir + "data-de-" + str(sampleSize) + ".json", "r") as file:
             savedGerData = json.load(file)
         trainingLabels, germanDictionaryNew, uselines = savedGerData[0], savedGerData[1], savedGerData[2]
-    print("german data prepared...")
+    print("\t[ OK ] german data prepared...")
 
     '''
     print("consolidating lists...")
@@ -62,7 +65,7 @@ def preprocess(rootDir, sampleSize, englishDictionary, englishTraining, germanDi
             json.dump([savedEngData, savedGerData], file)
     '''
 
-    print("loaded data...")
+    print("\n\t[ OK ] loaded data...")
 
     print()
 
@@ -84,6 +87,17 @@ training_data = [
     ("Everybody read that book".split(), ["NN", "V", "DET", "NN"])
 ]
 '''
+
+def convert(dictionary, data):
+    s = ""
+    # m = torch.max(data, dim=0)
+
+    # print(data.shape)
+    # print(m.shape)
+    for itm in range(1, data.shape[0] - 1):
+        # print(torch.max(data[itm,:], dim=0)[1].detach().item())
+        s += str(dictionary[torch.max(data[itm,:], dim=0)[1].detach().item()]) + " "
+    return s
 
 def loadData(dictionary, lines, uselines):
     new_data = []
@@ -109,14 +123,14 @@ def loadData(dictionary, lines, uselines):
         except:
             continue
 
-        print((count / float(length)) * 100.00)
+        # print((count / float(length)) * 100.00)
         new_data.append((sentence, converted_line))
-        print(new_data[-1])
+        # print(new_data[-1])
     return new_data, dictionary, use
     # print(new_data[-1])
 
 ### Prepare data
-print("preparing data...")
+print("preparing training data...")
 
 sampleSize = 10
 rootDir = "./datasets/"
@@ -127,6 +141,8 @@ germanEmbedding = open(rootDir + "./train.de", 'r').read().lower().split("\n")[:
 
 savedEngData = []
 savedGerData = []
+savedEngVal = []
+savedGerVal = []
 
 savedEngData, savedGerData = preprocess(rootDir, sampleSize, englishDictionary, englishTraining, germanDictionary, germanEmbedding)
 
@@ -134,52 +150,25 @@ savedEngData, savedGerData = preprocess(rootDir, sampleSize, englishDictionary, 
 validationSet = ["newstest2012","newstest2013","newstest2014","newstest2015"]
 englishValidation = []
 germanValidation = []
+print("preparing validation data...")
 
 for obj in validationSet:
     englishValidation = englishValidation + open(rootDir + "./" + obj + ".en.txt", 'r').read().lower().split("\n")
     germanValidation = germanValidation + open(rootDir + "./" + obj + ".de.txt", 'r').read().lower().split("\n")
 
-'''
-if not os.path.exists(rootDir + "data-en-" + str(sampleSize) + ".json"):
-    uselines = range(0, len(englishTraining))
-    trainingData, englishDictionaryNew, uselines = loadData(englishDictionary, englishTraining, uselines)
-    with open(rootDir + "data-en-" + str(sampleSize) + ".json", "w") as file:
-        json.dump([trainingData, englishDictionaryNew, uselines], file)
-    print("english data prepared...")
+    print("\t[ OK ] ", obj)
 
-else:
-    with open(rootDir + "data-en-" + str(sampleSize) + ".json", "r") as file:
-        savedEngData = json.load(file)
-    trainingData, englishDictionaryNew, uselines = savedEngData[0], savedEngData[1], savedEngData[2]
+savedEngVal = loadData(englishDictionary, englishValidation, range(0, len(englishValidation)))
+savedGerVal = loadData(germanDictionary, germanValidation, range(0, len(englishValidation)))
 
-if not os.path.exists(rootDir + "data-de-" + str(sampleSize) + ".json"):
-    trainingLabels, germanDictionaryNew, uselines = loadData(germanDictionary, germanEmbedding, uselines)
-    with open(rootDir + "data-de-" + str(sampleSize) + ".json", "w") as file:
-        json.dump([trainingLabels, germanDictionaryNew, uselines], file)
-    print("german data prepared...")
-
-else:
-    with open(rootDir + "data-de-" + str(sampleSize) + ".json", "r") as file:
-        savedGerData = json.load(file)
-    trainingLabels, germanDictionaryNew, uselines = savedGerData[0], savedGerData[1], savedGerData[2]
-
-print("consolidating lists...")
-
-
-if not os.path.exists(rootDir + "data-together-" + str(sampleSize) + ".json"):
-    print("saving entire dataset...")
-    with open(rootDir + "data-together-" + str(sampleSize) + ".json", "w") as file:
-        json.dump([savedEngData, savedGerData], file)
-
-print("loaded data...")
-'''
+print("\n\t[ OK ] loaded validation data")
 
 # These will usually be more like 32 or 64 dimensional.
 # We will keep them small, so we can see how the weights change as we train.
 EMBEDDING_DIM = 64 # 6
 HIDDEN_DIM = 64 # 6
 
-print("preparing model...")
+print("\npreparing model...")
 
 model = NMT(EMBEDDING_DIM, HIDDEN_DIM, len(savedEngData[0]), len(savedEngData[1])).cuda()
 loss_function = nn.NLLLoss()
@@ -188,7 +177,8 @@ optimizer = optim.SGD(model.parameters(), lr=0.1)
 
 #### Divide data for epochs
 num_epochs = 30
-epoch_data = list(split(savedEngData, num_epochs))
+epoch_data = list(split(savedEngData[0], num_epochs))
+print(len(epoch_data), "epochs")
 
 # See what the scores are before training
 # Note that element i,j of the output is the score for tag j for word i.
@@ -205,11 +195,10 @@ print("starting...")
 for epoch in range(num_epochs):  # again, normally you would NOT do 300 epochs, it is toy data
     
     _loss = 0
+    model.train(True)
 
     # Training
-    # for sentence in savedEngData[0]:
-    print("samples: ", len(epoch_data[epoch][0]))
-    for sentence in epoch_data[epoch][0]:
+    for sentence in epoch_data[epoch]:
         # Step 1. Remember that Pytorch accumulates gradients.
         # We need to clear them out before each instance
         model.zero_grad()
@@ -227,42 +216,45 @@ for epoch in range(num_epochs):  # again, normally you would NOT do 300 epochs, 
         # print("\n\ntagscore:",tag_scores)
         # Step 4. Compute the loss, gradients, and update the parameters by
         #  calling optimizer.step()
+        
         loss = loss_function(tag_scores, targets)
         
 
         _loss += loss.item()
+        '''
         if index % 100 == 0:
             print("\t",index,")", str(loss.item()))
-
+        '''
         loss.backward()
 
         optimizer.step()
 
         index += 1
     
-    print("Train ", epoch, " ) loss: ", str(_loss/len(epoch_data[epoch])))
+    # print("Train ", epoch, " ) loss: ", str(_loss/len(epoch_data[epoch])))
 
     # Validation
-    '''
-    _loss = 0
-    for sentence in savedEngDataVal[0]:
-        model.train(False)
-        model.eval()
+    # _loss = 0
+    model.train(False)
+    model.eval()
+    _bleu = 0
 
+    val_index = 0;
+    for sentence in savedEngVal[0]:
         sentence_in = prepare_sequence(sentence[1])
-        targets = prepare_sequence(savedEngData[0][index][1])
+        targets = prepare_sequence(savedGerVal[0][val_index][1])
 
         with torch.no_grad():
             tag_scores = model(sentence_in)
 
-        loss = loss_function(tag_scores, targets)
-        _loss += loss.item()
+        # print("sentence: ", " ".join(sentence[0]))
+        # print("ground truth: ", " ".join(savedGerVal[0][val_index][0]))
+        # print("predicted: ", convert(germanDictionary, tag_scores))
 
-        # b = blue
+        _bleu += sentence_bleu([savedGerVal[0][val_index][0]], convert(germanDictionary, tag_scores).split(" "), smoothing_function=chencherry.method1)
+        val_index += 1
 
-    print("Validation ", epoch, ") loss: ", _loss/len(savedEngDataVal[0]), " BLEU: ", b)
-    model.train(True)
-    '''
+    print(epoch, ") training (loss): ", str(_loss/len(epoch_data[epoch])), "  | validation (bleu): ", _bleu/len(savedEngVal[0])) # , " BLEU: ", b)
 
 # See what the scores are after training
 '''
