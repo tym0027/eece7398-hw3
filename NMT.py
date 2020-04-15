@@ -8,6 +8,7 @@ from datetime import datetime
 
 import json
 import os
+import sys
 
 from bleu import *
 chencherry = SmoothingFunction()
@@ -32,15 +33,19 @@ class NMT(nn.Module):
 
         # The LSTM takes word embeddings as inputs, and outputs hidden states
         # with dimensionality hidden_dim.
-        self.lstm = nn.LSTM(embedding_dim, hidden_dim)
+        self.lstm1 = nn.LSTM(embedding_dim, hidden_dim)
+        self.lstm2 = nn.LSTM(embedding_dim, hidden_dim) 
 
         # The linear layer that maps from hidden state space to tag space
         self.hidden2tag = nn.Linear(hidden_dim, tagset_size)
 
     def forward(self, sentence):
         embeds = self.word_embeddings(sentence)
-        lstm_out, _ = self.lstm(embeds.view(len(sentence), 1, -1))
-        tag_space = self.hidden2tag(lstm_out.view(len(sentence), -1))
+        lstm_out1, _ = self.lstm1(embeds.view(len(sentence), 1, -1))
+        lstm_out2, _ = self.lstm2(lstm_out1)
+        
+
+        tag_space = self.hidden2tag(lstm_out2.view(len(sentence), -1))
         tag_scores = F.log_softmax(tag_space, dim=1)
         return tag_scores
 
@@ -56,7 +61,7 @@ def preprocess(rootDir, sampleSize, englishDictionary, englishTraining, germanDi
             savedEngData = json.load(file)
         trainingData, englishDictionaryNew, uselines = savedEngData[0], savedEngData[1], savedEngData[2]
     
-    print("\t[ OK ] english data prepared...")
+    # print("\t[ OK ] english data prepared...")
     log("\t[ OK ] english data prepared...")
 
     if not os.path.exists(rootDir + "data-de-" + str(sampleSize) + ".json"):
@@ -68,7 +73,7 @@ def preprocess(rootDir, sampleSize, englishDictionary, englishTraining, germanDi
         with open(rootDir + "data-de-" + str(sampleSize) + ".json", "r") as file:
             savedGerData = json.load(file)
         trainingLabels, germanDictionaryNew, uselines = savedGerData[0], savedGerData[1], savedGerData[2]
-    print("\t[ OK ] german data prepared...")
+    # print("\t[ OK ] german data prepared...")
     log("\t[ OK ] german data prepared...")
 
     '''
@@ -79,9 +84,9 @@ def preprocess(rootDir, sampleSize, englishDictionary, englishTraining, germanDi
             json.dump([savedEngData, savedGerData], file)
     '''
 
-    print("\n\t[ OK ] loaded data...")
+    # print("\n\t[ OK ] loaded data...")
     log("\n\t[ OK ] loaded data...\n")
-    print()
+    # print()
 
     return savedEngData, savedGerData 
 
@@ -113,6 +118,11 @@ def convert(dictionary, data):
         s += str(dictionary[torch.max(data[itm,:], dim=0)[1].detach().item()]) + " "
     return s
 
+
+def loadModel(model, path):
+    # model.load_state_dict(torch.load('./model/classify_cifar10_49.pth'))
+    model.load_state_dict(torch.load(path))
+    return model
 
 def saveModel(model, path):
     torch.save(model.state_dict(), path)
@@ -149,7 +159,7 @@ def loadData(dictionary, lines, uselines):
     # print(new_data[-1])
 
 ### Prepare data
-print("preparing training data...")
+# print("preparing training data...")
 log("preparing training data...")
 
 sampleSize = 1
@@ -170,20 +180,20 @@ savedEngData, savedGerData = preprocess(rootDir, sampleSize, englishDictionary, 
 validationSet = ["newstest2012","newstest2013","newstest2014","newstest2015"]
 englishValidation = []
 germanValidation = []
-print("preparing validation data...")
+# print("preparing validation data...")
 log("preparing validation data...")
 
 for obj in validationSet:
     englishValidation = englishValidation + open(rootDir + "./" + obj + ".en.txt", 'r').read().lower().split("\n")
     germanValidation = germanValidation + open(rootDir + "./" + obj + ".de.txt", 'r').read().lower().split("\n")
 
-    print("\t[ OK ] ", obj)
+    # print("\t[ OK ] ", obj)
     log("\t[ OK ] " + str(obj))
 
 savedEngVal = loadData(englishDictionary, englishValidation, range(0, len(englishValidation)))
 savedGerVal = loadData(germanDictionary, germanValidation, range(0, len(englishValidation)))
 
-print("\n\t[ OK ] loaded validation data")
+# print("\n\t[ OK ] loaded validation data")
 log("\n\t[ OK ] loaded validation data")
 
 # These will usually be more like 32 or 64 dimensional.
@@ -191,18 +201,21 @@ log("\n\t[ OK ] loaded validation data")
 EMBEDDING_DIM = 128 # 128 # 6
 HIDDEN_DIM = 128 # 128 # 6
 
-print("\npreparing model...")
+# print("\npreparing model...")
 log("\npreparing model...")
 
 model = NMT(EMBEDDING_DIM, HIDDEN_DIM, len(savedEngData[0]), len(savedEngData[1])).cuda()
 loss_function = nn.NLLLoss()
 optimizer = optim.SGD(model.parameters(), lr=0.1)
 
+log("loading model...")
+# model = loadModel(model,"./model/english_to_german_b8.191409480913228e-05-e0.pth")
+
 
 #### Divide data for epochs
 num_epochs = int(300 / sampleSize)
 epoch_data = list(split(savedEngData[0], num_epochs))
-print(len(epoch_data), "epochs")
+# print(len(epoch_data), "epochs")
 log(str(len(epoch_data)) + " epochs...")
 
 # See what the scores are before training
@@ -217,9 +230,12 @@ with torch.no_grad():
 
 best_bleu = 0
 index = 0
-print("starting...")
+# print("starting...")
 log("starting...")
-for epoch in range(num_epochs):  # again, normally you would NOT do 300 epochs, it is toy data
+
+# log("(from epoch 1)")
+start_epoch = 0
+for epoch in range(start_epoch, num_epochs):  # again, normally you would NOT do 300 epochs, it is toy data
     
     _loss = 0
     _bleu = 0
@@ -303,12 +319,12 @@ for epoch in range(num_epochs):  # again, normally you would NOT do 300 epochs, 
     _bleu = corpus_bleu(groundTruth, predictions, weights=(0.25, 0.25, 0.25, 0.25), smoothing_function=chencherry.method1, auto_reweigh=False,) 
 
     po = str(epoch) + " ) training (loss): " + str(_loss/len(epoch_data[epoch])) + "  (bleu): " + str(train_bleu) + " | validation (bleu): " +  str(_bleu)  
-    print(epoch, ") training (loss): ", str(_loss/len(epoch_data[epoch])), "  (bleu): ", str(train_bleu), " | validation (bleu): ", _bleu) # , " BLEU: ", b)
+    # print(epoch, ") training (loss): ", str(_loss/len(epoch_data[epoch])), "  (bleu): ", str(train_bleu), " | validation (bleu): ", _bleu) # , " BLEU: ", b)
     log(po)
 
     if _bleu > best_bleu:
         saveModel(model, "./model/english_to_german_b" + str(_bleu) + "-e" + str(epoch) + ".pth")
-        print("saving model...")
+        # print("saving model...")
         log("saving model...")
         best_bleu = _bleu
 
